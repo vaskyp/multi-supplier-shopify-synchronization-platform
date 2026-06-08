@@ -6,6 +6,8 @@
 >
 > This README documents the system architecture, design decisions, synchronization workflows, and technical implementation details.
 
+## Overview
+
 A production-oriented backend platform that automates supplier feed ingestion, product normalization, inventory synchronization, pricing updates, and Shopify catalog synchronization.
 
 The system aggregates product data from multiple suppliers, maintains a centralized product catalog, and synchronizes inventory and pricing changes with Shopify using GraphQL Bulk Operations.
