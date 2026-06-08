@@ -415,4 +415,4 @@ Planned enhancements include:
 
 Production use for active e-commerce operations.
 
-Designed and developed as a custom backend automation platform for large-scale supplier catalog synchronization and Shopify integration.
+The implementation remains private due to commercial use and proprietary supplier integrations. This repository is intended to provide a technical overview of the platform architecture and synchronization workflows.
