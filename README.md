@@ -1,5 +1,11 @@
 # Multi-Supplier Shopify Synchronization Platform
 
+> This repository serves as a public technical overview of the project.
+>
+> The source code remains private because it contains proprietary business logic, supplier integrations, and production infrastructure used in active commercial operations.
+>
+> This README documents the system architecture, design decisions, synchronization workflows, and technical implementation details.
+
 A production-oriented backend platform that automates supplier feed ingestion, product normalization, inventory synchronization, pricing updates, and Shopify catalog synchronization.
 
 The system aggregates product data from multiple suppliers, maintains a centralized product catalog, and synchronizes inventory and pricing changes with Shopify using GraphQL Bulk Operations.
