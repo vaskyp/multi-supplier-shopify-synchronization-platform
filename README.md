@@ -56,14 +56,6 @@ Supported feed types include:
 - Full catalog feeds
 - Incremental offer feeds
 
-Current supplier integrations include:
-
-- Hurtel
-- Yukatel
-- Action
-- Delta
-- PartnerTele
-
 Each supplier implementation contains dedicated parsing and transformation logic while exposing a common interface through a shared supplier abstraction layer.
 
 ---
@@ -275,26 +267,6 @@ Provides:
 ### Supplier Integrations
 
 Each supplier implementation contains dedicated parsing logic for handling supplier-specific feed structures.
-
-#### hurtel.py
-
-Processes catalog and offer feeds from Hurtel.
-
-#### yukatel.py
-
-Processes JSON product feeds from Yukatel.
-
-#### action.py
-
-Processes XML catalog feeds from Action.
-
-#### delta.py
-
-Processes Delta supplier feeds.
-
-#### partnertele.py
-
-Processes PartnerTele product feeds.
 
 ---
 
