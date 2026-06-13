@@ -266,6 +266,8 @@ Provides:
 
 ### Supplier Integrations
 
+#### supplier_X.py
+
 Each supplier implementation contains dedicated parsing logic for handling supplier-specific feed structures.
 
 ---
