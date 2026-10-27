@@ -8,9 +8,9 @@
 
 ## Overview
 
-A production-oriented backend platform that automates supplier feed ingestion, product normalization, inventory synchronization, pricing updates, and Shopify catalog synchronization.
+A production-oriented backend platform that automates supplier feed ingestion, product normalization, product data enrichment, inventory synchronization, pricing updates, and Shopify catalog synchronization.
 
-The system aggregates product data from multiple suppliers, maintains a centralized product catalog, and synchronizes inventory and pricing changes with Shopify using GraphQL Bulk Operations.
+The system aggregates product data from multiple suppliers, maintains a centralized product catalog, enriches products with third-party product content, and synchronizes inventory, pricing, and content changes with Shopify using GraphQL Bulk Operations.
 
 ---
 
@@ -21,22 +21,24 @@ The system aggregates product data from multiple suppliers, maintains a centrali
 - XML and JSON feed processing
 - Automated inventory synchronization
 - Automated pricing synchronization
+- Automated product content enrichment (descriptions, specifications, PDF leaflets, reviews)
 - Shopify GraphQL Bulk Operations
 - Product normalization pipeline
 - Change detection via hashing
+- Concurrent enrichment with resumable batch processing
 - Linux VPS deployment
 
 ---
 
-## Overview
+## Background
 
 Managing large e-commerce catalogs manually becomes increasingly difficult as supplier count and product volume grow.
 
-Each supplier provides product information in different formats, update frequencies, and structures. Maintaining accurate inventory, pricing, descriptions, and product availability inside Shopify requires significant automation.
+Each supplier provides product information in different formats, update frequencies, and structures. Maintaining accurate inventory, pricing, descriptions, and product availability inside Shopify requires significant automation. Supplier data is also often incomplete, with missing descriptions, specifications, or documentation.
 
 This platform was designed to solve that problem.
 
-It continuously imports supplier feeds, normalizes product information into a unified internal model, detects changes, and synchronizes updates with Shopify automatically.
+It continuously imports supplier feeds, normalizes product information into a unified internal model, fills content gaps from external product databases, detects changes, and synchronizes updates with Shopify automatically.
 
 The platform currently supports catalogs exceeding 50,000 products across multiple suppliers.
 
@@ -82,6 +84,30 @@ This allows products from different suppliers to be processed consistently throu
 
 ---
 
+### Product Data Enrichment
+
+Products are matched by EAN against an external product content database to fill gaps left by supplier feeds.
+
+Enrichment includes:
+
+- Product descriptions
+- Technical specifications
+- PDF product leaflets
+- Customer reviews and rating scores
+
+Key design decisions:
+
+- **Fill gaps, don't overwrite:** existing descriptions are never replaced by external content
+- **Query once:** every product is checked at most once, so later runs only process newly added products
+- **Concurrent lookups:** external requests run in parallel worker threads
+- **Queued pushes:** enriched data is flagged locally and pushed to Shopify afterwards; failed pushes stay queued and are retried on the next run
+
+Descriptions are synchronized to the Shopify product, while specifications and PDF leaflets are stored in Shopify metafields. Reviews are published to the store's review platform through its API.
+
+Dedicated maintenance scripts allow re-processing a specific set of products (for example, only descriptions or only specifications) without sweeping the whole catalog, including a dry-run mode for safe inspection.
+
+---
+
 ### Centralized Product Catalog
 
 A local database acts as the system's source of truth.
@@ -93,6 +119,7 @@ The catalog stores:
 - Supplier offers
 - Inventory information
 - Pricing information
+- Enrichment data (descriptions, specifications, leaflets, reviews)
 - Shopify identifiers
 - Synchronization metadata
 
@@ -118,7 +145,7 @@ Each supplier offer is fingerprinted using:
 
 When a supplier update is processed, hashes are compared against previously stored values.
 
-Only products with actual changes are exported for synchronization.
+A second fingerprint covers the fields actually exported to Shopify. Only products whose export fingerprint differs from the last successful push are included in the update stream.
 
 This significantly reduces processing time and API usage.
 
@@ -134,10 +161,13 @@ Supported workflows include:
 - Product updates
 - Inventory synchronization
 - Variant updates
+- Metafield updates
 - Product archival
 - Bulk operations
 
 Large product batches are processed through Shopify Bulk Operations, enabling scalable synchronization without exceeding API limitations.
+
+Variant and inventory updates after bulk creation run in parallel with checkpoint-based resume support, so an interrupted run can continue where it stopped.
 
 ---
 
@@ -180,6 +210,7 @@ The platform supports:
 - Multi-image products
 - Image normalization
 - CDN integration
+- CDN cache warm-up before product creation
 - Optimized image delivery
 - Supplier-specific image handling
 
@@ -200,6 +231,10 @@ Supplier Feeds
             ▼
      Local Database
             │
+            ├──────────────► Product Enrichment
+            │                (descriptions, specs, leaflets, reviews)
+            │                        │
+            │◄───────────────────────┘
             ▼
    Change Detection
             │
@@ -210,7 +245,7 @@ Supplier Feeds
  Shopify Bulk Operations
             │
             ▼
-      Shopify Store
+      Shopify Store  ◄──── Review Platform (reviews)
 ```
 
 ---
@@ -229,6 +264,7 @@ Responsible for:
 - Product persistence
 - Supplier persistence
 - Change tracking
+- Enrichment data storage
 - Batch operations
 - Shopify ID storage
 
@@ -247,7 +283,31 @@ Responsibilities include:
 - Staged uploads
 - Inventory updates
 - Product updates
+- Description and metafield pushes
 - Product archival
+
+---
+
+#### content_client.py
+
+Client for the external product content API.
+
+Responsibilities include:
+
+- Lookup by EAN
+- Response normalization (description, specifications, leaflet URL, reviews)
+- Retry handling
+
+---
+
+#### review_client.py
+
+Client for the review platform.
+
+Responsibilities include:
+
+- Publishing reviews per product
+- Mapping stored review data to the platform's format
 
 ---
 
@@ -272,6 +332,21 @@ Each supplier implementation contains dedicated parsing logic for handling suppl
 
 ---
 
+### Enrichment Layer
+
+#### enrichment.py
+
+Runs the enrichment sweep and the follow-up pushes:
+
+1. Select products with an EAN that have not been checked yet
+2. Fetch external product data concurrently
+3. Store results locally using the fill-gaps policy
+4. Push queued descriptions, specifications, leaflets, and reviews
+
+Supports test runs (limited batches), sweep-only mode, and push-only mode.
+
+---
+
 ### Export Layer
 
 #### export_shopify_jsonl.py
@@ -289,17 +364,29 @@ Files are automatically split into chunks suitable for Shopify Bulk Operations.
 
 ### Utility Scripts
 
+#### bootstrap_from_shopify.py
+
+Builds the local database from an existing Shopify store.
+
 #### migrate_shopify_ids.py
 
 One-time migration utility used to associate previously existing Shopify products with local database records.
 
-#### delete.py
+#### Enrichment maintenance scripts
 
-Administrative product cleanup utility.
+Re-process descriptions or specifications for a defined set of products, with dry-run support.
 
-#### delete_all.py
+#### reviews.py
 
-Bulk deletion utility.
+Recalculates rating scores and publishes stored reviews to the review platform.
+
+#### check_image_domains.py
+
+Audits which external image hosts are referenced by the catalog.
+
+#### delete.py / delete_all.py
+
+Administrative product cleanup utilities. Deletion requires explicit confirmation and creates a backup first.
 
 ---
 
@@ -314,11 +401,13 @@ Execution flow:
 1. Initialize database
 2. Import supplier feeds
 3. Normalize product data
-4. Detect changes
-5. Generate Shopify exports
-6. Execute bulk synchronization
-7. Update inventory and pricing
-8. Archive inactive products
+4. Enrich products with external content and push enrichment data
+5. Archive products below business-rule thresholds
+6. Detect changes and generate Shopify exports
+7. Warm the image CDN cache for new products
+8. Execute bulk creation
+9. Update variants, inventory and pricing
+10. Bulk update existing products
 
 ---
 
@@ -331,6 +420,8 @@ Execution flow:
 ### APIs & Integrations
 
 - Shopify GraphQL Admin API
+- External product content API
+- Review platform API
 
 ### Data Processing
 
@@ -347,6 +438,7 @@ Execution flow:
 
 - Linux
 - VPS Hosting
+- Scheduled execution (cron)
 - Environment-based configuration
 
 ### Integrations
@@ -369,6 +461,8 @@ Key optimizations include:
 - Change detection via hashing
 - Shopify bulk mutations
 - Chunked exports
+- Concurrent external lookups
+- Checkpoint-based resume support
 - Retry and rate-limit handling
 
 These optimizations allow efficient synchronization of catalogs containing tens of thousands of products.
